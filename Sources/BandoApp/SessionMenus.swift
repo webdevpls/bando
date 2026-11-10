@@ -48,8 +48,7 @@ struct AgentSwitcherPanel: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            Text("Agente").font(.system(size: 11, weight: .bold)).foregroundStyle(p.secondary)
-                .padding(.horizontal, 12).padding(.top, 10).padding(.bottom, 4)
+            PopoverLabel("Agente").padding(.horizontal, 14).padding(.top, 12).padding(.bottom, 6)
             // Só os instalados à vista; os outros ficam recolhidos e com busca.
             ScrollView {
                 VStack(alignment: .leading, spacing: 0) {
@@ -60,20 +59,25 @@ struct AgentSwitcherPanel: View {
                     }
                     if !notInstalled.isEmpty {
                         Button { withAnimation(.easeOut(duration: 0.15)) { showOthers.toggle() } } label: {
-                            HStack(spacing: 6) {
-                                Image(systemName: showOthers ? "chevron.down" : "chevron.right").font(.system(size: 10, weight: .semibold))
-                                Text("Instalar outros agentes (\(notInstalled.count))").font(.system(size: 12))
+                            HStack(spacing: 8) {
+                                Image(systemName: "plus.circle").font(.system(size: 12)).frame(width: 14)
+                                Text("Instalar outros agentes").font(.system(size: 12.5))
+                                Text("\(notInstalled.count)").font(.system(size: 11, design: .monospaced)).foregroundStyle(p.tertiary)
                                 Spacer()
+                                Image(systemName: showOthers ? "chevron.down" : "chevron.right").font(.system(size: 9, weight: .semibold))
                             }
                             .foregroundStyle(p.secondary)
-                            .padding(.horizontal, 14).frame(height: 30)
+                            .padding(.horizontal, 14).frame(height: 32)
                             .contentShape(Rectangle())
                         }
                         .buttonStyle(.plain).pointerCursor()
                         if showOthers {
-                            TextField("Buscar agente", text: $filter)
-                                .textFieldStyle(.roundedBorder).font(.system(size: 12))
-                                .padding(.horizontal, 12).padding(.bottom, 4)
+                            HStack(spacing: 6) {
+                                Image(systemName: "magnifyingglass").font(.system(size: 11)).foregroundStyle(p.tertiary)
+                                TextField("Buscar agente", text: $filter)
+                            }
+                            .fieldBox(height: 28)
+                            .padding(.horizontal, 12).padding(.bottom, 6)
                             ForEach(notInstalled.filter { filter.isEmpty || $0.agent.name.localizedCaseInsensitiveContains(filter) }, id: \.agent.id) { a in
                                 AgentOption(item: a, selected: false, current: false) { install(a.agent) }
                             }
@@ -81,33 +85,43 @@ struct AgentSwitcherPanel: View {
                     }
                 }
             }
-            .frame(maxHeight: showOthers ? 340 : CGFloat(installed.count) * 38 + 34)
-            Rectangle().fill(p.border).frame(height: 1).padding(.vertical, 6)
-            VStack(alignment: .leading, spacing: 8) {
-                Picker("Provider", selection: $provider) {
-                    ForEach(providers) { Text($0.name).tag($0.id) }
-                }
-                TextField("Modelo (opcional)", text: $modelName,
-                          prompt: Text(model.config?.providers[provider]?.models.first ?? "padrão do agente"))
-                if agent != session.agent {
-                    Picker("Levar para o novo agente", selection: $handoff) {
-                        ForEach(HandoffMode.allCases, id: \.self) { Text($0.label).tag($0) }
+            .frame(height: showOthers ? min(420, CGFloat(installed.count) * 38 + 34 + 40 + CGFloat(notInstalled.count) * 38) : CGFloat(installed.count) * 38 + 34)
+            DialogDivider().padding(.vertical, 8)
+            VStack(alignment: .leading, spacing: 12) {
+                HStack(alignment: .top, spacing: 10) {
+                    VStack(alignment: .leading, spacing: 6) {
+                        FieldLabel("Provider")
+                        SelectField(selection: $provider, options: providers.map { ($0.id, $0.name) })
+                    }
+                    VStack(alignment: .leading, spacing: 6) {
+                        FieldLabel("Modelo", hint: "opcional")
+                        TextField(model.config?.providers[provider]?.models.first ?? "padrão", text: $modelName).fieldBox()
                     }
                 }
-                Text(note).font(.system(size: 11)).foregroundStyle(p.secondary).fixedSize(horizontal: false, vertical: true)
-                HStack {
+                if agent != session.agent {
+                    VStack(alignment: .leading, spacing: 6) {
+                        FieldLabel("Levar para o novo agente")
+                        SelectField(selection: $handoff, options: HandoffMode.allCases.map { ($0, $0.label) })
+                    }
+                }
+                HStack(alignment: .top, spacing: 6) {
+                    Image(systemName: "info.circle").font(.system(size: 11)).foregroundStyle(p.tertiary).padding(.top, 1)
+                    Text(note).font(.system(size: 11.5)).foregroundStyle(p.secondary).fixedSize(horizontal: false, vertical: true)
+                }
+                HStack(spacing: 8) {
                     Spacer()
-                    Button("Cancelar", action: close)
-                    Button(agent == session.agent ? "Reiniciar com esta configuração" : "Trocar para \(model.config?.agents[agent]?.name ?? agent)") {
+                    Button("Cancelar", action: close).buttonStyle(OutlineButtonStyle())
+                    Button(agent == session.agent ? "Reiniciar" : "Trocar para \(model.config?.agents[agent]?.name ?? agent)") {
                         apply()
                     }
+                    .buttonStyle(AccentButtonStyle())
                     .keyboardShortcut(.defaultAction)
                     .disabled(!changed)
                 }
             }
-            .padding(.horizontal, 12).padding(.bottom, 12)
+            .padding(.horizontal, 14).padding(.bottom, 14)
         }
-        .frame(width: 340)
+        .frame(width: 360)
         .onAppear {
             agent = session.agent
             provider = session.provider ?? "default"
@@ -179,11 +193,18 @@ struct AgentOption: View {
     var body: some View {
         Button(action: action) {
             HStack(spacing: 8) {
-                Image(systemName: "checkmark").font(.system(size: 11, weight: .bold))
-                    .opacity(selected ? 1 : 0).foregroundStyle(.green).frame(width: 14)
+                Image(systemName: "checkmark").font(.system(size: 11, weight: .semibold))
+                    .opacity(selected ? 1 : 0).foregroundStyle(p.accent).frame(width: 14)
                 VStack(alignment: .leading, spacing: 1) {
-                    Text(item.agent.name + (current ? "  (atual)" : "")).font(.system(size: 13))
-                        .foregroundStyle(item.isInstalled ? p.text : p.tertiary)
+                    HStack(spacing: 6) {
+                        Text(item.agent.name).font(.system(size: 13))
+                            .foregroundStyle(item.isInstalled ? p.text : p.tertiary)
+                        if current {
+                            Text("atual").font(.system(size: 10, weight: .medium)).foregroundStyle(p.secondary)
+                                .padding(.horizontal, 5).frame(height: 16)
+                                .background(RoundedRectangle(cornerRadius: 4).fill(p.hover))
+                        }
+                    }
                     Text(item.isInstalled ? (item.version ?? "instalado") : "Não instalado")
                         .font(.system(size: 11)).foregroundStyle(p.tertiary).lineLimit(1)
                 }
@@ -191,7 +212,7 @@ struct AgentOption: View {
                 if !item.isInstalled && item.agent.install != nil {
                     Text("Instalar").font(.system(size: 11, weight: .medium)).foregroundStyle(p.secondary)
                         .padding(.horizontal, 6).padding(.vertical, 2)
-                        .background(Capsule().strokeBorder(p.border))
+                        .background(RoundedRectangle(cornerRadius: 5).strokeBorder(p.border.opacity(2)))
                 }
             }
             .padding(.horizontal, 10).frame(height: 38)
@@ -222,7 +243,7 @@ struct SessionAction: Identifiable {
         let id = session.id
         var items: [SessionAction] = []
         if session.status.isLive {
-            items.append(.init(id: "stop", title: "Parar sessão", symbol: "stop.circle", kind: .destructive) { model.stopSession(id) })
+            items.append(.init(id: "stop", title: "Parar sessão…", symbol: "stop.circle", kind: .destructive) { model.requestStop([id]) })
         } else {
             items.append(.init(id: "resume", title: "Retomar sessão", symbol: "play.circle") { model.resumeSession(id) })
         }
@@ -256,7 +277,7 @@ struct SessionAction: Identifiable {
             NSPasteboard.general.clearContents(); NSPasteboard.general.setString(session.worktreePath, forType: .string)
         })
         items.append(.separator("s4"))
-        items.append(.init(id: "delete", title: "Apagar sessão e worktree…", symbol: "trash", kind: .destructive) { model.deleteSession(id) })
+        items.append(.init(id: "delete", title: "Apagar sessão e worktree…", symbol: "trash", kind: .destructive) { model.requestDelete([id]) })
         return items
     }
 }
@@ -310,7 +331,15 @@ struct SessionActionsButton: View {
     /// Avisa quem mostra o botão só no hover: com o menu aberto o botão precisa
     /// continuar na tela, senão o menu perde a âncora e para de responder.
     var onOpenChange: ((Bool) -> Void)? = nil
-    @State private var open = false
+    /// Estado do menu guardado por quem mostra o botão: muda no mesmo instante
+    /// do clique, sem o botão sumir e o popover reabrir.
+    var openBinding: Binding<Bool>? = nil
+    @State private var localOpen = false
+
+    private var open: Bool {
+        get { openBinding?.wrappedValue ?? localOpen }
+        nonmutating set { if let openBinding { openBinding.wrappedValue = newValue } else { localOpen = newValue } }
+    }
 
     var body: some View {
         let p = model.palette
@@ -321,8 +350,8 @@ struct SessionActionsButton: View {
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain).pointerCursor()
-        .help("Mais ações")
-        .popover(isPresented: $open, arrowEdge: .bottom) {
+        .tooltip("Mais ações")
+        .popover(isPresented: openBinding ?? $localOpen, arrowEdge: .bottom) {
             SessionActionsPanel(session: session) { open = false }
                 .environment(model)
                 .environment(\.palette, p)
@@ -341,17 +370,21 @@ struct SessionActionsPanel: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack(spacing: 8) {
-                Circle().fill(StateColor.dot(session.status) ?? p.tertiary).frame(width: 7, height: 7)
-                Text(session.name).font(.system(size: 12, weight: .semibold)).lineLimit(1)
+                Text(session.name).font(.system(size: 12.5, weight: .semibold)).lineLimit(1)
                 Spacer(minLength: 4)
-                Text(StateColor.label(session.status)).font(.system(size: 11, design: .monospaced)).foregroundStyle(p.tertiary)
+                HStack(spacing: 5) {
+                    Circle().fill(StateColor.dot(session.status) ?? p.tertiary).frame(width: 6, height: 6)
+                    Text(StateColor.label(session.status)).font(.system(size: 10.5, weight: .medium)).foregroundStyle(p.secondary)
+                }
+                .padding(.horizontal, 6).frame(height: 18)
+                .background(RoundedRectangle(cornerRadius: 4).fill(p.hover))
             }
-            .padding(.horizontal, 10).padding(.top, 6).padding(.bottom, 8)
-            Rectangle().fill(p.border).frame(height: 1).padding(.horizontal, 6).padding(.bottom, 4)
+            .padding(.horizontal, 8).padding(.top, 4).padding(.bottom, 8)
+            Rectangle().fill(p.border).frame(height: 1).padding(.horizontal, -6).padding(.bottom, 4)
             ForEach(SessionAction.list(for: session, model: model)) { item in
                 switch item.kind {
                 case .separator:
-                    Rectangle().fill(p.border).frame(height: 1).padding(.vertical, 4).padding(.horizontal, 6)
+                    Rectangle().fill(p.border).frame(height: 1).padding(.vertical, 4).padding(.horizontal, -6)
                 case .dependency:
                     ActionItem(symbol: item.symbol, title: item.title, color: p.text,
                                trailing: showDependency ? "chevron.down" : "chevron.right") {
@@ -367,7 +400,7 @@ struct SessionActionsPanel: View {
             }
         }
         .padding(6)
-        .frame(width: 270)
+        .frame(width: 260)
         .background(p.card)
     }
 
@@ -401,15 +434,15 @@ struct ActionItem: View {
     var body: some View {
         Button(action: action) {
             HStack(spacing: 10) {
-                Image(systemName: symbol.isEmpty ? "circle" : symbol).font(.system(size: 14))
+                Image(systemName: symbol.isEmpty ? "circle" : symbol).font(.system(size: 12))
                     .foregroundStyle(color == p.text ? (hovering ? p.text : p.secondary) : color)
-                    .opacity(symbol.isEmpty ? 0 : 1).frame(width: 18)
+                    .opacity(symbol.isEmpty ? 0 : 1).frame(width: 16)
                 Text(title).font(.system(size: 13)).lineLimit(1).foregroundStyle(color)
                 Spacer(minLength: 6)
-                if let trailing { Image(systemName: trailing).font(.system(size: 10, weight: .semibold)).foregroundStyle(p.tertiary) }
+                if let trailing { Image(systemName: trailing).font(.system(size: 9, weight: .semibold)).foregroundStyle(p.tertiary) }
             }
-            .padding(.horizontal, 8).frame(height: 30)
-            .background(RoundedRectangle(cornerRadius: 7).fill(hovering ? p.accent.opacity(0.12) : .clear))
+            .padding(.horizontal, 8).frame(height: 28)
+            .background(RoundedRectangle(cornerRadius: 5).fill(hovering ? (color == p.text || color == p.secondary ? p.hover : color.opacity(0.10)) : .clear))
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -421,22 +454,22 @@ struct ActionItem: View {
 struct RenameSheet: View {
     @Environment(AppModel.self) private var model
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.palette) private var p
     let session: Session
     @State private var name = ""
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text("Renomear sessão").font(.system(size: 14, weight: .semibold))
-            TextField("Nome", text: $name).textFieldStyle(.roundedBorder).onSubmit(save)
-            HStack {
+        VStack(alignment: .leading, spacing: 16) {
+            DialogHeader(title: "Renomear sessão", description: "O nome aparece na lateral e na grade.", symbol: "pencil")
+            TextField("Nome", text: $name).fieldBox().onSubmit(save)
+            HStack(spacing: 8) {
                 Spacer()
-                Button("Cancelar") { dismiss() }.keyboardShortcut(.cancelAction)
-                Button("Salvar", action: save).keyboardShortcut(.defaultAction)
+                Button("Cancelar") { dismiss() }.buttonStyle(OutlineButtonStyle()).keyboardShortcut(.cancelAction)
+                Button("Salvar", action: save).buttonStyle(AccentButtonStyle()).keyboardShortcut(.defaultAction)
                     .disabled(name.trimmingCharacters(in: .whitespaces).isEmpty)
             }
         }
-        .padding(20)
-        .frame(width: 380)
+        .dialog(width: 400, palette: p)
         .onAppear { name = session.name }
     }
 

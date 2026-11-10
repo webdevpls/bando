@@ -42,6 +42,21 @@ final class AppModel {
     var showNewSession = false
     var showPalette = false
     var showShortcuts = false
+    /// Sessões a confirmar no modal de parar.
+    var stopRequest: StopRequest?
+    /// Sessões marcadas para ação em lote (Cmd+clique na lateral).
+    var multiSelection: Set<String> = []
+    /// Projetos marcados para tirar da lateral (Cmd+clique no cabeçalho).
+    var projectSelection: Set<String> = []
+    /// Modo de seleção ligado pelo botão "Selecionar" do rodapé.
+    var selectMode = false
+    var isSelecting: Bool { selectMode || !multiSelection.isEmpty || !projectSelection.isEmpty }
+    func endSelection() { selectMode = false; multiSelection = []; projectSelection = [] }
+    func toggleProjectMark(_ id: String) {
+        if projectSelection.contains(id) { projectSelection.remove(id) } else { projectSelection.insert(id) }
+    }
+    /// Sessões a confirmar no modal de apagar (uma, pelo hover, ou o lote).
+    var deleteRequest: DeleteRequest?
     var renaming: Session?
     /// Aviso curto no rodapé do painel (andamento de uma troca de agente etc.).
     var toast: String?
@@ -207,6 +222,7 @@ final class AppModel {
         let fresh = (try? store.sessions()) ?? []
         notifyTransitions(fresh)
         sessions = fresh
+        multiSelection.formIntersection(fresh.map(\.id))
         if let sel = selection, !sessions.contains(where: { $0.id == sel }) { selection = nil }
         refreshContexts()
         refreshTmux()
@@ -373,7 +389,63 @@ final class AppModel {
     }
 
     func stopSession(_ id: String) { run("Parar") { _ = try $0.stop(id) } }
+
+    /// Toda parada e todo apagar passam por um modal de confirmação.
+    func requestStop(_ ids: [String]) { if !ids.isEmpty { stopRequest = StopRequest(sessionIds: ids) } }
+    func requestDelete(_ ids: [String]) { if !ids.isEmpty { deleteRequest = DeleteRequest(sessionIds: ids) } }
+
+    /// Para várias sessões de uma vez. Worktrees e branches ficam; cada uma pode ser retomada.
+    func stopSessions(_ ids: [String]) {
+        guard let service else { return }
+        Task.detached {
+            var failures: [Error] = []
+            for id in ids {
+                do { _ = try service.stop(id) } catch { failures.append(error) }
+            }
+            await MainActor.run {
+                self.refreshSessions()
+                if let first = failures.first { self.showError("Parar sessões", first) }
+            }
+        }
+    }
     func resumeSession(_ id: String) { run("Retomar") { _ = try $0.resume(id) } }
+
+    /// Tira projetos da lateral escondendo as sessões paradas deles. Nada é
+    /// apagado; as sessões vão para "ocultas" e o projeto volta com sessão nova.
+    func hideProjects(_ ids: Set<String>) {
+        projectSelection.subtract(ids)
+        let targets = sessions.filter { ids.contains($0.projectId) && !$0.hidden && !$0.status.isLive && $0.status != .queued }.map(\.id)
+        guard let service, !targets.isEmpty else { return }
+        Task.detached {
+            for id in targets { try? service.setHidden(id, true) }
+            await MainActor.run { self.refreshSessions() }
+        }
+    }
+
+    func toggleMulti(_ id: String) {
+        if multiSelection.contains(id) { multiSelection.remove(id) } else { multiSelection.insert(id) }
+    }
+
+    /// Apaga várias sessões e seus worktrees. Sem `force`, as que têm trabalho
+    /// não salvo ficam (a trava continua valendo); devolve quantas ficaram.
+    func deleteSessions(_ ids: [String], force: Set<String>) {
+        guard let service else { return }
+        multiSelection.subtract(ids)
+        Task.detached {
+            var failures: [Error] = []
+            for id in ids {
+                do {
+                    try service.delete(id, options: .init(removeWorktree: true, deleteBranch: false, force: force.contains(id)))
+                } catch BandoError.unsafeDelete {
+                    continue
+                } catch { failures.append(error) }
+            }
+            await MainActor.run {
+                self.refreshSessions()
+                if let first = failures.first { self.showError("Apagar sessões", first) }
+            }
+        }
+    }
 
     func deleteSession(_ id: String, force: Bool = false) {
         guard let service else { return }
@@ -504,6 +576,52 @@ final class AppModel {
         save()
     }
 
+    /// Soltar na grade: uma sessão, ou "project:<id>" para as sessões ativas
+    /// do projeto. Entra na posição `slot` (as outras andam uma casa); com
+    /// `replace`, troca a sessão daquela célula.
+    @discardableResult
+    func dropIntoGrid(_ payloads: [String], at slot: Int, replace: Bool) -> Bool {
+        var ids: [String] = []
+        for p in payloads {
+            if p.hasPrefix("project:") {
+                let pid = String(p.dropFirst("project:".count))
+                ids += sessions.filter { $0.projectId == pid && $0.status.isLive }
+                    .sorted { $0.status.urgency < $1.status.urgency }.map(\.id)
+            } else if session(p) != nil {
+                ids.append(p)
+            }
+        }
+        guard let first = ids.first else { return false }
+        if !gridMode { setGrid(cols: max(gridCols, 2), rows: max(gridRows, 1)) }
+        compactGrid()
+        if replace {
+            place(first, inCell: slot)
+            return true
+        }
+        var cells = gridCells.compactMap { $0 }
+        // Grade cheia: cresce para o formato recomendado em vez de substituir.
+        let needed = min(cells.count + ids.filter { !cells.contains($0) }.count, Self.maxGrid * Self.maxGrid)
+        if needed > cellCount {
+            let shape = SessionGrid.shape(needed, chosen: (0, 0), fit: Self.maxGrid)
+            gridCols = shape.0; gridRows = shape.1
+            colFractions = []; rowFractions = []
+        }
+        var at = min(slot, cells.count)
+        for id in ids {
+            if let from = cells.firstIndex(of: id) {
+                cells.remove(at: from)
+                if from < at { at -= 1 }
+            }
+            guard cells.count < cellCount else { break }
+            cells.insert(id, at: min(at, cells.count))
+            at += 1
+        }
+        gridCells = cells.map { Optional($0) }
+        focusedCell = cells.firstIndex(of: first) ?? 0
+        save()
+        return true
+    }
+
     func showInGrid(_ id: String) {
         if !gridMode { setGrid(cols: max(gridCols, 2), rows: max(gridRows, 1)) }
         compactGrid()
@@ -585,4 +703,14 @@ extension AppModel.Route {
         case .sessions: nil
         }
     }
+}
+
+struct StopRequest: Identifiable {
+    let id = UUID()
+    let sessionIds: [String]
+}
+
+struct DeleteRequest: Identifiable {
+    let id = UUID()
+    let sessionIds: [String]
 }

@@ -32,9 +32,11 @@ struct MainView: View {
         .sheet(isPresented: $model.showNewSession) { NewSessionSheet().environment(\.palette, p) }
         .sheet(isPresented: $model.showPalette) { CommandPalette().environment(\.palette, p) }
         .sheet(isPresented: $model.showShortcuts) { ShortcutsSheet().environment(\.palette, p) }
-        .sheet(item: $model.renaming) { RenameSheet(session: $0).environment(model) }
-        .sheet(isPresented: $model.showAddProject) { AddProjectSheet().environment(model) }
-        .sheet(isPresented: $model.showImportWorkspace) { ImportWorkspaceSheet().environment(model) }
+        .sheet(item: $model.stopRequest) { StopSessionsSheet(ids: $0.sessionIds).environment(model).environment(\.palette, p) }
+        .sheet(item: $model.deleteRequest) { DeleteSessionsSheet(ids: $0.sessionIds).environment(model).environment(\.palette, p) }
+        .sheet(item: $model.renaming) { RenameSheet(session: $0).environment(model).environment(\.palette, p) }
+        .sheet(isPresented: $model.showAddProject) { AddProjectSheet().environment(model).environment(\.palette, p) }
+        .sheet(isPresented: $model.showImportWorkspace) { ImportWorkspaceSheet().environment(model).environment(\.palette, p) }
         .animation(.easeOut(duration: 0.2), value: model.showSidebar)
     }
 }
@@ -121,7 +123,7 @@ struct SearchField: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain).pointerCursor()
-        .help("Buscar sessões (⌘K)")
+        .tooltip("Buscar sessões (⌘K)")
     }
 }
 
@@ -145,7 +147,7 @@ struct TrailingItems: View {
                     .contentShape(Capsule())
                 }
                 .buttonStyle(.plain).pointerCursor()
-                .help("Ir para a próxima sessão esperando você (⌘J)")
+                .tooltip("Ir para a próxima sessão esperando você (⌘J)")
             }
             LayoutMenu()
             IconButton(symbol: "sidebar.right", help: "Detalhes da sessão (⌥⌘I)", size: 16) { model.showInspector.toggle() }
@@ -156,7 +158,7 @@ struct TrailingItems: View {
                     .frame(width: 30, height: 28).contentShape(Rectangle())
             }
             .buttonStyle(.plain).pointerCursor()
-            .help("Ajustes (⌘,)")
+            .tooltip("Ajustes (⌘,)")
         }
         .environment(\.palette, p)
     }
@@ -179,7 +181,7 @@ struct LayoutMenu: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain).pointerCursor()
-        .help("Layout: uma sessão ou grade até 4×4 (⌥⌘G)")
+        .tooltip("Layout: uma sessão ou grade até 4×4 (⌥⌘G)")
         .popover(isPresented: $open, arrowEdge: .bottom) {
             GridPicker { cols, rows in
                 model.setGrid(cols: cols, rows: rows)
@@ -206,9 +208,9 @@ struct GridPicker: View {
                         ForEach(1...AppModel.maxGrid, id: \.self) { c in
                             let on = c <= shown.0 && r <= shown.1
                             RoundedRectangle(cornerRadius: 3)
-                                .fill(on ? p.accent.opacity(0.3) : p.hover)
-                                .overlay(RoundedRectangle(cornerRadius: 3).strokeBorder(on ? p.accent.opacity(0.55) : p.border, lineWidth: 1))
-                                .frame(width: 24, height: 24)
+                                .fill(on ? p.accent.opacity(0.22) : .clear)
+                                .overlay(RoundedRectangle(cornerRadius: 3).strokeBorder(on ? p.accent.opacity(0.5) : p.border.opacity(2), lineWidth: 1))
+                                .frame(width: 22, height: 22)
                                 .contentShape(Rectangle())
                                 .onHover { inside in if inside { hover = (c, r) } }
                                 .pointerCursor()
@@ -221,8 +223,8 @@ struct GridPicker: View {
             .frame(maxWidth: .infinity)
             .padding(.top, 12)
 
-            Text(shown == (1, 1) ? "Uma sessão" : "até \(shown.0) × \(shown.1)")
-                .font(.system(size: 12, weight: .medium, design: .monospaced))
+            Text(shown == (1, 1) ? "Uma sessão" : "\(shown.0) × \(shown.1)")
+                .font(.system(size: 11.5, weight: .medium, design: .monospaced))
                 .foregroundStyle(p.secondary)
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, 8)
@@ -277,7 +279,7 @@ struct HelpMenu: View {
                 .frame(width: 30, height: 28).contentShape(Rectangle())
         }
         .buttonStyle(.plain).pointerCursor()
-        .help("Ajuda")
+        .tooltip("Ajuda")
         .popover(isPresented: $open, arrowEdge: .bottom) {
             VStack(spacing: 0) {
                 MenuRow(symbol: "keyboard", title: "Atalhos de teclado", shortcut: "⌘/") { open = false; model.showShortcuts = true }
@@ -310,27 +312,27 @@ struct ShortcutsSheet: View {
     ]
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            HStack {
-                Text("Atalhos de teclado").font(.system(size: 15, weight: .semibold))
-                Spacer()
-                Button("Fechar") { dismiss() }.keyboardShortcut(.cancelAction)
+        VStack(alignment: .leading, spacing: 16) {
+            HStack(alignment: .top) {
+                DialogHeader(title: "Atalhos de teclado", symbol: "keyboard")
+                Button("Fechar") { dismiss() }.buttonStyle(OutlineButtonStyle()).keyboardShortcut(.cancelAction)
             }
             ForEach(Self.groups, id: \.0) { group in
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(group.0).font(.system(size: 12, weight: .bold)).foregroundStyle(p.secondary)
+                VStack(alignment: .leading, spacing: 6) {
+                    Text(group.0).font(.system(size: 11.5, weight: .semibold)).foregroundStyle(p.secondary)
                     ForEach(group.1, id: \.0) { item in
                         HStack {
                             Text(item.1).font(.system(size: 13))
                             Spacer()
-                            Text(item.0).font(.system(size: 12, design: .monospaced)).foregroundStyle(p.secondary)
+                            Text(item.0).font(.system(size: 11, design: .monospaced)).foregroundStyle(p.secondary)
+                                .padding(.horizontal, 6).frame(height: 20)
+                                .overlay(RoundedRectangle(cornerRadius: 4).strokeBorder(p.border.opacity(2)))
                         }
                     }
                 }
             }
         }
-        .padding(20)
-        .frame(width: 440)
+        .dialog(width: 460, palette: p)
     }
 }
 
@@ -457,7 +459,7 @@ struct SessionPane: View {
                 Label(branch, systemImage: "arrow.triangle.branch")
                     .font(.system(size: 11, design: .monospaced)).foregroundStyle(p.secondary).lineLimit(1)
                     .padding(.leading, 6)
-                    .help(session.worktreePath)
+                    .tooltip(session.worktreePath)
             }
             ContextRing(session: session)
             if session.status == .waiting, let d = session.statusDetail {
@@ -466,7 +468,7 @@ struct SessionPane: View {
             Spacer(minLength: 8)
             AgentSwitcher(session: session)
             if session.status.isLive {
-                IconButton(symbol: "stop.circle", help: "Parar sessão (⌘.)", size: 15) { model.stopSession(session.id) }
+                IconButton(symbol: "stop.circle", help: "Parar sessão (⌘.)", size: 15) { model.requestStop([session.id]) }
             } else {
                 IconButton(symbol: "play.circle", help: "Retomar (⇧⌘R)", size: 15) { model.resumeSession(session.id) }
             }
@@ -503,17 +505,17 @@ struct SessionPane: View {
                     .background(Capsule().fill(StateColor.cyan.opacity(0.10)))
                     Color.clear.frame(width: 0, height: 0)
                 }
-                .help(session.worktreePath)
+                .tooltip(session.worktreePath)
             }
             Spacer(minLength: 6)
             if hovering || menuOpen {
                 HStack(spacing: 2) {
                     IconButton(symbol: "arrow.up.left.and.arrow.down.right", help: "Abrir só esta sessão", size: 12) { model.openAlone(session.id) }
                     if session.status.isLive {
-                        IconButton(symbol: "stop.circle", help: "Parar sessão", size: 12) { model.stopSession(session.id) }
+                        IconButton(symbol: "stop.circle", help: "Parar sessão", size: 12) { model.requestStop([session.id]) }
                     }
                     IconButton(symbol: "rectangle.badge.minus", help: "Tirar da grade", size: 12) { model.removeFromGrid(session.id) }
-                    SessionActionsButton(session: session, size: 12) { menuOpen = $0 }
+                    SessionActionsButton(session: session, size: 12, openBinding: $menuOpen)
                 }
                 .transition(.opacity)
             } else {
@@ -565,52 +567,140 @@ struct SessionGrid: View {
     static let gap: CGFloat = 10
     static let pad: CGFloat = 10
     @State private var dropTargeted = false
+    /// Arraste em andamento: posição onde vai entrar (ou célula a substituir).
+    @State private var dragSlot: Int?
+    @State private var dragReplace = false
+    @State private var dragWatch = DragEndWatch()
+
+    /// Uma posição da grade: sessão ou a prévia de onde o arraste vai cair.
+    enum Slot: Identifiable {
+        case session(Session), ghost
+        var id: String { if case .session(let s) = self { s.id } else { "_ghost" } }
+    }
+
+    struct Layout {
+        let cols: Int, rows: Int
+        let widths: [CGFloat], heights: [CGFloat]
+        let usableW: CGFloat, usableH: CGFloat
+
+        func origin(_ i: Int) -> CGPoint {
+            let r = i / cols, c = i % cols
+            return CGPoint(x: SessionGrid.pad + Self.offset(widths, c), y: SessionGrid.pad + Self.offset(heights, r))
+        }
+        func frame(_ i: Int) -> CGRect {
+            CGRect(origin: origin(i), size: CGSize(width: widths[i % cols], height: heights[min(i / cols, rows - 1)]))
+        }
+        /// Índice da célula sob o ponto (a mais próxima, se cair num vão).
+        func index(at pt: CGPoint, count: Int) -> Int {
+            var best = 0, bestDist = CGFloat.infinity
+            for i in 0..<max(count, 1) {
+                let f = frame(i)
+                if f.contains(pt) { return i }
+                let d = hypot(pt.x - f.midX, pt.y - f.midY)
+                if d < bestDist { best = i; bestDist = d }
+            }
+            return best
+        }
+        static func offset(_ sizes: [CGFloat], _ index: Int) -> CGFloat {
+            sizes.prefix(index).reduce(0, +) + SessionGrid.gap * CGFloat(index)
+        }
+    }
+
+    /// Formato para `n` painéis: o escolhido quando a conta fecha com ele,
+    /// senão o recomendado (1 cheio, 2 lado a lado, 3 em 3×1, 4 em 2×2...).
+    static func shape(_ n: Int, chosen: (Int, Int), fit: Int) -> (Int, Int) {
+        var cols: Int
+        if n == chosen.0 * chosen.1 {
+            cols = chosen.0
+        } else {
+            switch n {
+            case ...3: cols = max(n, 1)
+            case 4: cols = 2
+            case 5, 6, 9: cols = 3
+            default: cols = 4
+            }
+        }
+        cols = max(min(cols, fit, n), 1)
+        return (cols, Int(ceil(Double(n) / Double(cols))))
+    }
+
+    func layout(_ n: Int, in size: CGSize) -> Layout {
+        let fit = max(Int((size.width - 2 * Self.pad + Self.gap) / 332), 1)
+        let (cols, rows) = Self.shape(n, chosen: (model.gridCols, model.gridRows), fit: fit)
+        let usableW = size.width - 2 * Self.pad - Self.gap * CGFloat(cols - 1)
+        let usableH = size.height - 2 * Self.pad - Self.gap * CGFloat(rows - 1)
+        return Layout(cols: cols, rows: rows,
+                      widths: model.fractions(columns: true, count: cols).map { CGFloat($0) * usableW },
+                      heights: model.fractions(columns: false, count: rows).map { CGFloat($0) * usableH },
+                      usableW: usableW, usableH: usableH)
+    }
 
     var body: some View {
         let items = model.gridSessions
-        if items.isEmpty {
+        if items.isEmpty && dragSlot == nil {
             empty
         } else {
             GeometryReader { geo in
-                let n = items.count
-                let fit = max(Int((geo.size.width - 2 * Self.pad + Self.gap) / 332), 1)
-                let cols = max(min(n, model.gridCols, fit), 1)
-                let rows = Int(ceil(Double(n) / Double(cols)))
-                let usableW = geo.size.width - 2 * Self.pad - Self.gap * CGFloat(cols - 1)
-                let usableH = geo.size.height - 2 * Self.pad - Self.gap * CGFloat(rows - 1)
-                let widths = model.fractions(columns: true, count: cols).map { CGFloat($0) * usableW }
-                let heights = model.fractions(columns: false, count: rows).map { CGFloat($0) * usableH }
+                let inserting = dragSlot != nil && !dragReplace
+                var slots: [Slot] = items.map { .session($0) }
+                let _ = { if inserting, let at = dragSlot { slots.insert(.ghost, at: min(at, slots.count)) } }()
+                let l = layout(slots.count, in: geo.size)
                 ZStack(alignment: .topLeading) {
-                    ForEach(Array(items.enumerated()), id: \.element.id) { i, s in
-                        let r = i / cols, c = i % cols
-                        cell(s, index: i)
-                            .frame(width: widths[c], height: heights[r])
-                            .offset(x: Self.pad + offset(widths, c), y: Self.pad + offset(heights, r))
+                    ForEach(Array(slots.enumerated()), id: \.element.id) { i, slot in
+                        let f = l.frame(i)
+                        Group {
+                            switch slot {
+                            case .session(let s): cell(s, index: items.firstIndex { $0.id == s.id } ?? i, replacing: dragReplace && dragSlot == i)
+                            case .ghost: ghost
+                            }
+                        }
+                        .frame(width: f.width, height: f.height)
+                        .offset(x: f.minX, y: f.minY)
                     }
-                    ForEach(0..<max(cols - 1, 0), id: \.self) { c in
-                        Handle(vertical: true, total: usableW) { d, done in
-                            model.resize(columns: true, at: c, count: cols, by: d, persist: done)
-                        } reset: { model.equalize(columns: true) }
-                        .frame(width: Self.gap, height: geo.size.height - 2 * Self.pad)
-                        .offset(x: Self.pad + offset(widths, c + 1) - Self.gap, y: Self.pad)
-                    }
-                    ForEach(0..<max(rows - 1, 0), id: \.self) { r in
-                        Handle(vertical: false, total: usableH) { d, done in
-                            model.resize(columns: false, at: r, count: rows, by: d, persist: done)
-                        } reset: { model.equalize(columns: false) }
-                        .frame(width: geo.size.width - 2 * Self.pad, height: Self.gap)
-                        .offset(x: Self.pad, y: Self.pad + offset(heights, r + 1) - Self.gap)
+                    if !inserting {
+                        ForEach(0..<max(l.cols - 1, 0), id: \.self) { c in
+                            Handle(vertical: true, total: l.usableW) { d, done in
+                                model.resize(columns: true, at: c, count: l.cols, by: d, persist: done)
+                            } reset: { model.equalize(columns: true) }
+                            .frame(width: Self.gap, height: geo.size.height - 2 * Self.pad)
+                            .offset(x: Self.pad + Layout.offset(l.widths, c + 1) - Self.gap, y: Self.pad)
+                        }
+                        ForEach(0..<max(l.rows - 1, 0), id: \.self) { r in
+                            Handle(vertical: false, total: l.usableH) { d, done in
+                                model.resize(columns: false, at: r, count: l.rows, by: d, persist: done)
+                            } reset: { model.equalize(columns: false) }
+                            .frame(width: geo.size.width - 2 * Self.pad, height: Self.gap)
+                            .offset(x: Self.pad, y: Self.pad + Layout.offset(l.heights, r + 1) - Self.gap)
+                        }
                     }
                 }
-                .animation(.timingCurve(0.25, 0.1, 0.25, 1, duration: 0.2), value: items.map(\.id))
+                .animation(.timingCurve(0.25, 0.1, 0.25, 1, duration: 0.2), value: slots.map(\.id))
+                .animation(.easeOut(duration: 0.12), value: dragReplace)
+                .onChange(of: dragSlot != nil) { _, on in
+                    if on { dragWatch.start { dragSlot = nil; dragReplace = false } } else { dragWatch.stop() }
+                }
+                .onDisappear { dragWatch.stop() }
+                .onDrop(of: [.text], delegate: GridDrop(
+                    count: items.count, capacity: AppModel.maxGrid * AppModel.maxGrid,
+                    slotAt: { pt, inserting in
+                        let n = items.count
+                        return inserting ? layout(n + 1, in: geo.size).index(at: pt, count: n + 1)
+                                         : layout(n, in: geo.size).index(at: pt, count: n)
+                    },
+                    update: { slot, replace in dragSlot = slot; dragReplace = replace },
+                    perform: { payloads, slot, replace in model.dropIntoGrid(payloads, at: slot, replace: replace) }))
             }
-            .background(dropTargeted ? StateColor.cyan.opacity(0.05) : .clear)
-            .dropDestination(for: String.self) { ids, _ in
-                guard let id = ids.first else { return false }
-                model.showInGrid(id)
-                return true
-            } isTargeted: { dropTargeted = $0 }
         }
+    }
+
+    /// Célula tracejada no lugar onde o arraste vai cair.
+    var ghost: some View {
+        RoundedRectangle(cornerRadius: 10)
+            .fill(p.accent.opacity(0.06))
+            .overlay(RoundedRectangle(cornerRadius: 10).strokeBorder(p.accent.opacity(0.6), style: StrokeStyle(lineWidth: 1.5, dash: [6, 5])))
+            .overlay {
+                Label("Soltar aqui", systemImage: "plus.square.dashed").font(.system(size: 12, weight: .medium)).foregroundStyle(p.accent)
+            }
     }
 
     func offset(_ sizes: [CGFloat], _ index: Int) -> CGFloat {
@@ -627,9 +717,9 @@ struct SessionGrid: View {
         }
     }
 
-    func cell(_ s: Session, index: Int) -> some View {
+    func cell(_ s: Session, index: Int, replacing: Bool = false) -> some View {
         let focused = model.focusedCell == index
-        let b = border(s, focused: focused)
+        let b = replacing ? (p.accent, CGFloat(2)) : border(s, focused: focused)
         return SessionPane(session: s, focused: focused, cellIndex: index)
             .id(s.id)
             .clipShape(RoundedRectangle(cornerRadius: 10))
@@ -637,10 +727,14 @@ struct SessionGrid: View {
             .shadow(color: .black.opacity(focused ? 0.25 : 0), radius: 10, y: 3)
             .opacity(model.dimUnfocused && !focused ? 0.6 : 1)
             .animation(.easeOut(duration: 0.15), value: focused)
-            .dropDestination(for: String.self) { ids, _ in
-                guard let id = ids.first else { return false }
-                model.place(id, inCell: index)
-                return true
+            .overlay {
+                if replacing {
+                    RoundedRectangle(cornerRadius: 10).fill(p.accent.opacity(0.10))
+                        .overlay(Label("Substituir", systemImage: "arrow.left.arrow.right").font(.system(size: 12, weight: .medium))
+                            .foregroundStyle(p.accent).padding(.horizontal, 10).frame(height: 26)
+                            .background(RoundedRectangle(cornerRadius: 6).fill(p.card)))
+                        .allowsHitTesting(false)
+                }
             }
     }
 
@@ -648,7 +742,7 @@ struct SessionGrid: View {
         VStack(spacing: 10) {
             Image(systemName: "square.grid.2x2").font(.system(size: 40, weight: .light)).foregroundStyle(p.tertiary)
             Text("Nenhuma sessão na grade").font(.system(size: 14, weight: .bold))
-            Text("Arraste sessões da lateral para cá, ou use \"Adicionar à grade\" no menu da sessão.")
+            Text("Arraste sessões ou projetos da lateral para cá, ou use \"Adicionar à grade\" no menu da sessão.")
                 .font(.system(size: 12)).foregroundStyle(p.secondary).multilineTextAlignment(.center)
             let live = model.sessions.filter(\.status.isLive).count
             if live > 0 {
@@ -663,9 +757,7 @@ struct SessionGrid: View {
                 .padding(Self.pad))
         .background(dropTargeted ? StateColor.cyan.opacity(0.05) : .clear)
         .dropDestination(for: String.self) { ids, _ in
-            guard let id = ids.first else { return false }
-            model.showInGrid(id)
-            return true
+            model.dropIntoGrid(ids, at: 0, replace: false)
         } isTargeted: { dropTargeted = $0 }
     }
 
@@ -708,5 +800,63 @@ struct ReportsButtons: View {
     var body: some View {
         IconButton(symbol: "dollarsign.circle", help: "Uso e custo (⇧⌘U)", size: 16) { openWindow(id: "usage") }
         IconButton(symbol: "chart.bar.xaxis", help: "Relatórios (⌥⌘R)", size: 16) { openWindow(id: "reports") }
+    }
+}
+
+/// Arraste sobre a grade: calcula a posição sob o mouse a cada movimento e
+/// avisa a grade para mostrar a prévia. Com a grade cheia, substitui.
+struct GridDrop: DropDelegate {
+    let count: Int
+    let capacity: Int
+    let slotAt: (CGPoint, Bool) -> Int
+    let update: (Int?, Bool) -> Void
+    let perform: ([String], Int, Bool) -> Void
+
+    var inserting: Bool { count < capacity }
+
+    func validateDrop(info: DropInfo) -> Bool { info.hasItemsConforming(to: [.text]) }
+    func dropEntered(info: DropInfo) { update(slotAt(info.location, inserting), !inserting) }
+    func dropUpdated(info: DropInfo) -> DropProposal? {
+        update(slotAt(info.location, inserting), !inserting)
+        return DropProposal(operation: .copy)
+    }
+    func dropExited(info: DropInfo) { update(nil, false) }
+
+    func performDrop(info: DropInfo) -> Bool {
+        let slot = slotAt(info.location, inserting), replace = !inserting
+        update(nil, false)
+        let providers = info.itemProviders(for: [.text])
+        guard !providers.isEmpty else { return false }
+        for provider in providers {
+            _ = provider.loadTransferable(type: String.self) { result in
+                guard case .success(let text) = result else { return }
+                Task { @MainActor in perform([text], slot, replace) }
+            }
+        }
+        return true
+    }
+}
+
+/// O SwiftUI às vezes não avisa que o arraste saiu (a grade muda embaixo do
+/// mouse). Enquanto a prévia está na tela, o primeiro evento comum de mouse ou
+/// teclado (que não chega durante o arraste) encerra a prévia.
+@MainActor
+final class DragEndWatch {
+    private var monitor: Any?
+
+    func start(_ end: @escaping () -> Void) {
+        guard monitor == nil else { return }
+        monitor = NSEvent.addLocalMonitorForEvents(
+            matching: [.mouseMoved, .mouseEntered, .mouseExited, .leftMouseDown, .leftMouseUp, .rightMouseDown, .scrollWheel, .keyDown]
+        ) { [weak self] event in
+            end()
+            self?.stop()
+            return event
+        }
+    }
+
+    func stop() {
+        if let monitor { NSEvent.removeMonitor(monitor) }
+        monitor = nil
     }
 }

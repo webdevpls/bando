@@ -43,7 +43,7 @@ struct BandoApp: App {
                         .keyboardShortcut(KeyEquivalent(Character("\(i)")))
                 }
                 Divider()
-                Button("Parar") { if let id = model.selection { model.stopSession(id) } }
+                Button("Parar…") { if let id = model.selection { model.requestStop([id]) } }
                     .keyboardShortcut(".", modifiers: .command)
                     .disabled(model.selectedSession?.status.isLive != true)
                 Button("Retomar") { if let id = model.selection { model.resumeSession(id) } }

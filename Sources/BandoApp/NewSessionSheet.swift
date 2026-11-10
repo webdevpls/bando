@@ -5,6 +5,7 @@ import SwiftUI
 struct NewSessionSheet: View {
     @Environment(AppModel.self) private var model
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.palette) private var p
 
     @State private var projectId: String?
     @State private var prompt = ""
@@ -19,73 +20,92 @@ struct NewSessionSheet: View {
     @State private var error: String?
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            Text("Nova sessão").font(.title2.weight(.semibold)).padding([.horizontal, .top], 20)
-            Form {
-                Section {
-                    HStack {
-                        Picker("Projeto", selection: $projectId) {
-                            Text("Escolha…").tag(String?.none)
-                            ForEach(model.projects) { Text($0.name).tag(Optional($0.id)) }
-                        }
-                        Button("Outra pasta…", action: pickFolder)
-                    }
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text("Tarefa").font(.callout)
-                        TextEditor(text: $prompt)
-                            .font(.body)
-                            .frame(minHeight: 90, maxHeight: 180)
-                            .scrollContentBackground(.hidden)
-                            .padding(6)
-                            .background(RoundedRectangle(cornerRadius: 6).fill(Color(nsColor: .textBackgroundColor)))
-                        Text("Pode deixar vazio para abrir o agente e escrever lá.")
-                            .font(.caption).foregroundStyle(.secondary)
-                    }
-                    TextField("Nome (opcional)", text: $name)
-                }
-                Section("Agente") {
-                    Picker("Agente", selection: $agent) {
-                        ForEach(agents, id: \.agent.id) { a in
-                            Text(a.agent.name + (a.isInstalled ? "" : " (não instalado)")).tag(a.agent.id)
-                        }
-                    }
-                    Picker("Provider", selection: $provider) {
-                        ForEach(providers, id: \.id) { Text($0.name).tag($0.id) }
-                    }
-                    TextField("Modelo (opcional)", text: $modelName, prompt: Text(modelHint))
-                }
-                Section("Código") {
-                    Toggle("Trabalhar num worktree separado", isOn: $useWorktree)
-                    if useWorktree {
-                        TextField("Branch (opcional)", text: $branch, prompt: Text("bando/<nome>"))
-                    }
-                    Picker("Começar depois de", selection: $dependsOn) {
-                        Text("Agora").tag(String?.none)
-                        ForEach(model.sessions.filter { $0.status.isLive || $0.status == .queued }) {
-                            Text($0.name).tag(Optional($0.id))
-                        }
-                    }
-                }
-            }
-            .formStyle(.grouped)
+        VStack(alignment: .leading, spacing: 16) {
+            DialogHeader(title: "Nova sessão", description: "O agente roda num worktree próprio, numa sessão do tmux.",
+                         symbol: "square.and.pencil")
 
-            if let error {
-                Text(error).foregroundStyle(.red).font(.callout).padding(.horizontal, 20)
+            VStack(alignment: .leading, spacing: 6) {
+                FieldLabel("Projeto")
+                HStack(spacing: 8) {
+                    SelectField(selection: $projectId, options: model.projects.map { (Optional($0.id), $0.name) })
+                    Button("Outra pasta…", action: pickFolder).buttonStyle(OutlineButtonStyle())
+                }
             }
+            VStack(alignment: .leading, spacing: 6) {
+                FieldLabel("Tarefa", hint: "opcional")
+                TextEditor(text: $prompt)
+                    .font(.system(size: 13))
+                    .scrollContentBackground(.hidden)
+                    .padding(.vertical, 6)
+                    .frame(minHeight: 90, maxHeight: 180)
+                    .fieldBox(height: nil)
+                Text("Pode deixar vazio para abrir o agente e escrever lá.")
+                    .font(.system(size: 11.5)).foregroundStyle(p.tertiary)
+            }
+            VStack(alignment: .leading, spacing: 6) {
+                FieldLabel("Nome", hint: "opcional")
+                TextField("Gerado a partir da tarefa", text: $name).fieldBox()
+            }
+
+            DialogDivider()
+
+            HStack(alignment: .top, spacing: 12) {
+                VStack(alignment: .leading, spacing: 6) {
+                    FieldLabel("Agente")
+                    SelectField(selection: $agent, options: agents.map {
+                        ($0.agent.id, $0.agent.name + ($0.isInstalled ? "" : " (não instalado)"))
+                    })
+                }
+                VStack(alignment: .leading, spacing: 6) {
+                    FieldLabel("Provider")
+                    SelectField(selection: $provider, options: providers.map { ($0.id, $0.name) })
+                }
+            }
+            VStack(alignment: .leading, spacing: 6) {
+                FieldLabel("Modelo", hint: "opcional")
+                TextField(modelHint, text: $modelName).fieldBox()
+            }
+
+            DialogDivider()
+
             HStack {
-                if let a = model.availability[agent], !a.isInstalled, let install = a.agent.install {
-                    Text("Instalar: \(install)").font(.caption).foregroundStyle(.secondary).textSelection(.enabled).lineLimit(2)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Worktree separado").font(.system(size: 13))
+                    Text("Isola as mudanças numa branch própria.").font(.system(size: 11.5)).foregroundStyle(p.tertiary)
                 }
                 Spacer()
-                Button("Cancelar") { dismiss() }.keyboardShortcut(.cancelAction)
+                Toggle("", isOn: $useWorktree).toggleStyle(.switch).controlSize(.small).labelsHidden()
+            }
+            HStack(alignment: .top, spacing: 12) {
+                if useWorktree {
+                    VStack(alignment: .leading, spacing: 6) {
+                        FieldLabel("Branch", hint: "opcional")
+                        TextField("bando/<nome>", text: $branch).fieldBox()
+                    }
+                }
+                VStack(alignment: .leading, spacing: 6) {
+                    FieldLabel("Começar depois de")
+                    SelectField(selection: $dependsOn, options: [(String?.none, "Agora")] +
+                        model.sessions.filter { $0.status.isLive || $0.status == .queued }.map { (Optional($0.id), $0.name) })
+                }
+            }
+
+            if let error {
+                Text(error).foregroundStyle(StateColor.failed).font(.system(size: 12))
+            }
+            HStack(spacing: 8) {
+                if let a = model.availability[agent], !a.isInstalled, let install = a.agent.install {
+                    Text("Instalar: \(install)").font(.system(size: 11.5)).foregroundStyle(p.secondary).textSelection(.enabled).lineLimit(2)
+                }
+                Spacer()
+                Button("Cancelar") { dismiss() }.buttonStyle(OutlineButtonStyle()).keyboardShortcut(.cancelAction)
                 Button(creating ? "Criando…" : "Criar sessão", action: create)
+                    .buttonStyle(AccentButtonStyle())
                     .keyboardShortcut(.return, modifiers: .command)
-                    .buttonStyle(.borderedProminent)
                     .disabled(projectId == nil || creating)
             }
-            .padding(20)
         }
-        .frame(width: 560)
+        .dialog(width: 560, palette: p)
         .onAppear(perform: setDefaults)
         .onChange(of: agent) { _, new in
             if !(providers.contains { $0.id == provider }) { provider = "default" }

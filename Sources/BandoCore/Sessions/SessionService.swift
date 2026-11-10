@@ -216,19 +216,27 @@ public final class SessionService: @unchecked Sendable {
 
     /// Apaga a sessão. Recusa se o worktree tiver trabalho não salvo, a menos
     /// que `force` esteja ligado.
+    /// Motivo para não apagar o worktree sem confirmação (mudança não commitada
+    /// ou commit sem push), ou nil se é seguro.
+    public func deleteBlocker(_ ref: String) throws -> String? {
+        let s = try store.findSession(ref)
+        guard s.usesWorktree, FileManager.default.fileExists(atPath: s.worktreePath) else { return nil }
+        let git = try Git()
+        if git.hasUncommittedChanges(s.worktreePath) {
+            return "\(s.worktreePath) tem mudanças não commitadas"
+        }
+        let ahead = git.unpushedCommits(s.worktreePath, base: s.baseBranch)
+        if ahead > 0 {
+            return "o branch \(s.branch ?? "?") tem \(ahead) commit(s) que não estão no remoto nem em \(s.baseBranch ?? "base")"
+        }
+        return nil
+    }
+
     public func delete(_ ref: String, options: DeleteOptions) throws {
         let s = try store.findSession(ref)
         let project = try store.project(s.projectId)
-        if s.usesWorktree && options.removeWorktree && !options.force,
-           FileManager.default.fileExists(atPath: s.worktreePath) {
-            let git = try Git()
-            if git.hasUncommittedChanges(s.worktreePath) {
-                throw BandoError.unsafeDelete("\(s.worktreePath) tem mudanças não commitadas")
-            }
-            let ahead = git.unpushedCommits(s.worktreePath, base: s.baseBranch)
-            if ahead > 0 {
-                throw BandoError.unsafeDelete("o branch \(s.branch ?? "?") tem \(ahead) commit(s) que não estão no remoto nem em \(s.baseBranch ?? "base")")
-            }
+        if options.removeWorktree && !options.force, let why = try deleteBlocker(s.id) {
+            throw BandoError.unsafeDelete(why)
         }
         if let tmux = try? Tmux(server: s.tmuxServer), tmux.hasSession(s.tmuxName) { try tmux.kill(s.tmuxName) }
         if s.usesWorktree, options.removeWorktree, let project, FileManager.default.fileExists(atPath: s.worktreePath) {

@@ -52,7 +52,7 @@ struct StatusIcon: View {
             }
         }
         .frame(width: size + 2, height: size + 2)
-        .help(status.label)
+        .tooltip(status.label)
         .accessibilityLabel(status.label)
     }
 
@@ -209,21 +209,123 @@ struct IconButton: View {
         .buttonStyle(.plain)
         .onHover { hovering = $0 }
         .pointerCursor()
-        .help(help)
+        .tooltip(help)
     }
 }
 
 /// Botão principal com o destaque do tema.
 struct AccentButtonStyle: ButtonStyle {
     @Environment(\.palette) private var p
+    @Environment(\.isEnabled) private var enabled
+    /// Cor no lugar do destaque (vermelho para ações que interrompem).
+    var tint: Color? = nil
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
-            .font(.system(size: 13, weight: .semibold))
-            .padding(.horizontal, 14).padding(.vertical, 7)
-            .foregroundStyle(p.onAccent)
-            .background(RoundedRectangle(cornerRadius: 8).fill(p.accent.opacity(configuration.isPressed ? 0.8 : 1)))
+            .font(.system(size: 13, weight: .medium))
+            .padding(.horizontal, 14).frame(height: 30)
+            .foregroundStyle(tint == nil ? p.onAccent : .white)
+            .background(RoundedRectangle(cornerRadius: 6).fill((tint ?? p.accent).opacity(configuration.isPressed ? 0.85 : 1)))
+            .opacity(enabled ? 1 : 0.45)
             .pointerCursor()
     }
+}
+
+/// Botão secundário: contorno fino, fundo só no hover.
+struct OutlineButtonStyle: ButtonStyle {
+    @Environment(\.palette) private var p
+    @Environment(\.isEnabled) private var enabled
+    func makeBody(configuration: Configuration) -> some View { OutlineBody(configuration: configuration, p: p, enabled: enabled) }
+
+    private struct OutlineBody: View {
+        let configuration: Configuration
+        let p: UIPalette
+        let enabled: Bool
+        @State private var hovering = false
+        var body: some View {
+            configuration.label
+                .font(.system(size: 13, weight: .medium))
+                .padding(.horizontal, 12).frame(height: 30)
+                .foregroundStyle(p.text)
+                .background(RoundedRectangle(cornerRadius: 6).fill(configuration.isPressed ? p.selected : (hovering ? p.hover : .clear)))
+                .overlay(RoundedRectangle(cornerRadius: 6).strokeBorder(p.border.opacity(2)))
+                .opacity(enabled ? 1 : 0.45)
+                .contentShape(Rectangle())
+                .onHover { hovering = $0 }
+                .pointerCursor()
+        }
+    }
+}
+
+/// Cabeçalho de modal: título, descrição curta em cinza e ícone pequeno opcional.
+struct DialogHeader: View {
+    @Environment(\.palette) private var p
+    let title: String
+    var description: String? = nil
+    var symbol: String? = nil
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            HStack(spacing: 8) {
+                if let symbol { Image(systemName: symbol).font(.system(size: 13)).foregroundStyle(p.secondary) }
+                Text(title).font(.system(size: 15, weight: .semibold)).foregroundStyle(p.text)
+            }
+            if let description {
+                Text(description).font(.system(size: 12.5)).foregroundStyle(p.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+}
+
+/// Rótulo de campo, 12 pt médio.
+struct FieldLabel: View {
+    @Environment(\.palette) private var p
+    let text: String
+    var hint: String? = nil
+    init(_ text: String, hint: String? = nil) { self.text = text; self.hint = hint }
+    var body: some View {
+        HStack(spacing: 4) {
+            Text(text).font(.system(size: 12, weight: .medium)).foregroundStyle(p.text)
+            if let hint { Text(hint).font(.system(size: 12)).foregroundStyle(p.tertiary) }
+        }
+    }
+}
+
+/// Campo com borda fina e cantos de 6 pt (texto, menu ou editor).
+struct FieldBox: ViewModifier {
+    @Environment(\.palette) private var p
+    var height: CGFloat? = 30
+    func body(content: Content) -> some View {
+        content
+            .textFieldStyle(.plain)
+            .font(.system(size: 13))
+            .padding(.horizontal, 10)
+            .frame(height: height)
+            .background(RoundedRectangle(cornerRadius: 6).fill(p.panel.opacity(0.6)))
+            .overlay(RoundedRectangle(cornerRadius: 6).strokeBorder(p.border.opacity(2)))
+    }
+}
+
+extension View {
+    func fieldBox(height: CGFloat? = 30) -> some View { modifier(FieldBox(height: height)) }
+
+    /// Moldura comum dos modais: fundo do tema, margem de 20 pt e largura fixa.
+    func dialog(width: CGFloat, palette p: UIPalette) -> some View {
+        self
+            .padding(20)
+            .frame(width: width)
+            .background(p.card)
+            .foregroundStyle(p.text)
+            .environment(\.palette, p)
+            .environment(\.colorScheme, p.isDark ? .dark : .light)
+    }
+}
+
+/// Linha divisória fina entre blocos de um modal.
+struct DialogDivider: View {
+    @Environment(\.palette) private var p
+    var body: some View { Rectangle().fill(p.border).frame(height: 1) }
 }
 
 /// Barra de título transparente pintada com a cor da moldura do tema. Os
@@ -284,4 +386,42 @@ struct PointerCursor: ViewModifier {
 
 extension View {
     func pointerCursor() -> some View { modifier(PointerCursor()) }
+}
+
+/// Seletor com a mesma cara dos campos: valor atual e setas à direita.
+struct SelectField<T: Hashable>: View {
+    @Environment(\.palette) private var p
+    @Binding var selection: T
+    let options: [(value: T, label: String)]
+    var placeholder = "Escolha…"
+
+    var body: some View {
+        Menu {
+            ForEach(options.indices, id: \.self) { i in
+                Button(options[i].label) { selection = options[i].value }
+            }
+        } label: {
+            HStack(spacing: 6) {
+                let current = options.first { $0.value == selection }?.label
+                Text(current ?? placeholder).foregroundStyle(current == nil ? p.tertiary : p.text).lineLimit(1)
+                Spacer(minLength: 4)
+                Image(systemName: "chevron.up.chevron.down").font(.system(size: 9, weight: .semibold)).foregroundStyle(p.tertiary)
+            }
+            .contentShape(Rectangle())
+        }
+        .menuStyle(.borderlessButton)
+        .menuIndicator(.hidden)
+        .fieldBox()
+        .pointerCursor()
+    }
+}
+
+/// Rótulo de seção dentro de popover: 11 pt médio, cinza.
+struct PopoverLabel: View {
+    @Environment(\.palette) private var p
+    let text: String
+    init(_ text: String) { self.text = text }
+    var body: some View {
+        Text(text).font(.system(size: 11, weight: .medium)).foregroundStyle(p.tertiary)
+    }
 }

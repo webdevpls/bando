@@ -419,7 +419,7 @@ struct SessionCard: View {
                 Circle().fill(tint ?? p.tertiary).frame(width: 6, height: 6)
                 Text(StateColor.label(session.status)).font(.system(size: 11, design: .monospaced)).foregroundStyle(tint ?? p.secondary)
                 Spacer()
-                if hovering || menuOpen { SessionActionsButton(session: session, size: 12) { menuOpen = $0 } }
+                if hovering || menuOpen { SessionActionsButton(session: session, size: 12, openBinding: $menuOpen) }
             }
             Text(session.name).font(.system(size: 13.5, weight: .semibold)).lineLimit(1)
             if let b = session.branch {
@@ -525,33 +525,34 @@ struct RecentRow: View {
 struct AddProjectSheet: View {
     @Environment(AppModel.self) private var model
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.palette) private var p
     @State private var path = ""
     @State private var name = ""
     @State private var error: String?
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            Label("Adicionar projeto", systemImage: "folder.badge.plus").font(.system(size: 15, weight: .semibold))
-            VStack(alignment: .leading, spacing: 4) {
-                Text("Caminho").font(.system(size: 12, weight: .medium))
-                HStack {
-                    TextField("/caminho/do/projeto", text: $path).textFieldStyle(.roundedBorder)
-                    Button { pick() } label: { Image(systemName: "folder") }.pointerCursor()
+        VStack(alignment: .leading, spacing: 16) {
+            DialogHeader(title: "Adicionar projeto", description: "Uma pasta com repositório git.", symbol: "folder.badge.plus")
+            VStack(alignment: .leading, spacing: 6) {
+                FieldLabel("Caminho")
+                HStack(spacing: 8) {
+                    TextField("/caminho/do/projeto", text: $path).fieldBox()
+                    Button { pick() } label: { Image(systemName: "folder").font(.system(size: 12)) }
+                        .buttonStyle(OutlineButtonStyle()).help("Escolher pasta")
                 }
             }
-            VStack(alignment: .leading, spacing: 4) {
-                Text("Nome (opcional)").font(.system(size: 12, weight: .medium))
-                TextField("Meu projeto", text: $name).textFieldStyle(.roundedBorder)
+            VStack(alignment: .leading, spacing: 6) {
+                FieldLabel("Nome", hint: "opcional")
+                TextField("Meu projeto", text: $name).fieldBox()
             }
-            if let error { Text(error).font(.system(size: 11)).foregroundStyle(StateColor.failed) }
-            HStack {
+            if let error { Text(error).font(.system(size: 12)).foregroundStyle(StateColor.failed) }
+            HStack(spacing: 8) {
                 Spacer()
-                Button("Cancelar") { dismiss() }.keyboardShortcut(.cancelAction)
-                Button("Adicionar", action: add).keyboardShortcut(.defaultAction).disabled(path.isEmpty)
+                Button("Cancelar") { dismiss() }.buttonStyle(OutlineButtonStyle()).keyboardShortcut(.cancelAction)
+                Button("Adicionar", action: add).buttonStyle(AccentButtonStyle()).keyboardShortcut(.defaultAction).disabled(path.isEmpty)
             }
         }
-        .padding(20)
-        .frame(width: 460)
+        .dialog(width: 460, palette: p)
     }
 
     func pick() {
@@ -584,24 +585,26 @@ struct AddProjectSheet: View {
 struct ImportWorkspaceSheet: View {
     @Environment(AppModel.self) private var model
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.palette) private var p
     @State private var path = "~/"
     @State private var found: [URL] = []
     @State private var selected: Set<URL> = []
     @State private var scanned = false
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            Label("Importar workspace", systemImage: "folder.badge.gearshape").font(.system(size: 15, weight: .semibold))
-            HStack {
-                TextField("Pasta com seus projetos", text: $path).textFieldStyle(.roundedBorder)
-                Button { pick() } label: { Image(systemName: "folder") }.pointerCursor()
-                Button("Procurar", action: scan).keyboardShortcut(.defaultAction)
+        VStack(alignment: .leading, spacing: 16) {
+            DialogHeader(title: "Importar workspace",
+                         description: "O Bando procura repositórios git até dois níveis abaixo da pasta. Você escolhe quais importar.",
+                         symbol: "folder.badge.gearshape")
+            HStack(spacing: 8) {
+                TextField("Pasta com seus projetos", text: $path).fieldBox()
+                Button { pick() } label: { Image(systemName: "folder").font(.system(size: 12)) }
+                    .buttonStyle(OutlineButtonStyle()).help("Escolher pasta")
+                Button("Procurar", action: scan).buttonStyle(OutlineButtonStyle()).keyboardShortcut(.defaultAction)
             }
-            Text("O Bando procura repositórios git até dois níveis abaixo da pasta. Você escolhe quais importar.")
-                .font(.system(size: 11.5)).foregroundStyle(.secondary)
             if scanned {
                 HStack {
-                    Text("\(found.count) repositórios encontrados").font(.system(size: 12, weight: .medium))
+                    FieldLabel("\(found.count) repositórios encontrados")
                     Spacer()
                     Button(selected.count == found.count ? "Desmarcar todos" : "Marcar todos") {
                         selected = selected.count == found.count ? [] : Set(found)
@@ -613,20 +616,21 @@ struct ImportWorkspaceSheet: View {
                         VStack(alignment: .leading, spacing: 1) {
                             Text(url.lastPathComponent)
                             Text(url.path.replacingOccurrences(of: NSHomeDirectory(), with: "~"))
-                                .font(.system(size: 11, design: .monospaced)).foregroundStyle(.secondary)
+                                .font(.system(size: 11, design: .monospaced)).foregroundStyle(p.secondary)
                         }
                     }
                 }
+                .scrollContentBackground(.hidden)
                 .frame(height: 260)
+                .overlay(RoundedRectangle(cornerRadius: 6).strokeBorder(p.border.opacity(2)))
             }
-            HStack {
+            HStack(spacing: 8) {
                 Spacer()
-                Button("Cancelar") { dismiss() }.keyboardShortcut(.cancelAction)
-                Button("Importar \(selected.count)") { importSelected() }.disabled(selected.isEmpty)
+                Button("Cancelar") { dismiss() }.buttonStyle(OutlineButtonStyle()).keyboardShortcut(.cancelAction)
+                Button("Importar \(selected.count)") { importSelected() }.buttonStyle(AccentButtonStyle()).disabled(selected.isEmpty)
             }
         }
-        .padding(20)
-        .frame(width: 560)
+        .dialog(width: 560, palette: p)
     }
 
     func pick() {
