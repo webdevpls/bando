@@ -8,7 +8,7 @@ import UserNotifications
 struct BandoApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var delegate
     @State private var model = AppModel()
-    private let updater = Updater()
+    private let updater = Updater.shared
 
     var body: some Scene {
         WindowGroup("Bando", id: "main") {
@@ -146,12 +146,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
 /// Bando manda uma notificação do macOS; clicar nela abre a janela "Instalar".
 @MainActor
 final class Updater: NSObject, ObservableObject, SPUStandardUserDriverDelegate, SPUUpdaterDelegate {
+    static let shared = Updater()
     static let showUpdate = Notification.Name("bando.showUpdate")
     nonisolated private static let notificationId = "bando-update"
     private(set) var controller: SPUStandardUpdaterController?
     /// Versão já baixada (modo automático) esperando para instalar, e como
     /// instalar agora sem esperar o app fechar.
     @Published private(set) var readyVersion: String?
+    /// Versão nova encontrada no appcast (ainda não baixada ou não instalada).
+    @Published private(set) var availableVersion: String?
     private var installNow: (() -> Void)?
     private var timer: Timer?
     private var lastCheck = Date.distantPast
@@ -159,6 +162,8 @@ final class Updater: NSObject, ObservableObject, SPUStandardUserDriverDelegate, 
 
     override init() {
         super.init()
+        // Para ver o badge sem publicar versão: abrir com -debugUpdateBadge 9.9.9
+        availableVersion = UserDefaults.standard.string(forKey: "debugUpdateBadge")
         let hasFeed = Bundle.main.object(forInfoDictionaryKey: "SUFeedURL") as? String != nil
         guard hasFeed else { return }
         controller = SPUStandardUpdaterController(startingUpdater: true, updaterDelegate: self, userDriverDelegate: self)
@@ -189,6 +194,20 @@ final class Updater: NSObject, ObservableObject, SPUStandardUserDriverDelegate, 
 
     /// Reinicia e instala a versão já baixada.
     func installReadyUpdate() { installNow?() }
+
+    /// Badge da barra: instala a já baixada, ou abre a janela do Sparkle.
+    func openUpdate() {
+        if let installNow { installNow() } else { controller?.checkForUpdates(nil) }
+    }
+
+    nonisolated func updater(_ updater: SPUUpdater, didFindValidUpdate item: SUAppcastItem) {
+        let version = item.displayVersionString
+        MainActor.assumeIsolated { self.availableVersion = version }
+    }
+
+    nonisolated func updaterDidNotFindUpdate(_ updater: SPUUpdater) {
+        MainActor.assumeIsolated { self.availableVersion = nil }
+    }
 
     // MARK: Atualização baixada em segundo plano (SPUUpdaterDelegate)
 
@@ -257,5 +276,42 @@ struct CheckForUpdatesButton: View {
         }
         Button("Procurar atualizações…") { updater.controller?.checkForUpdates(nil) }
             .disabled(updater.controller == nil)
+    }
+}
+
+/// Badge na barra de cima quando há versão nova: degradê verde, some sozinho
+/// quando não há atualização.
+struct UpdateBadge: View {
+    @ObservedObject var updater = Updater.shared
+    @State private var hovering = false
+
+    var body: some View {
+        if let version = updater.readyVersion ?? updater.availableVersion {
+            let ready = updater.readyVersion != nil
+            Button { updater.openUpdate() } label: {
+                HStack(spacing: 5) {
+                    Image(systemName: ready ? "arrow.clockwise.circle.fill" : "arrow.down.circle.fill")
+                        .font(.system(size: 12, weight: .semibold))
+                    Text(ready ? "Reiniciar para a \(version)" : "Atualizar para a \(version)")
+                        .font(.system(size: 11.5, weight: .semibold))
+                        .lineLimit(1).fixedSize()
+                }
+                .foregroundStyle(.white)
+                .padding(.horizontal, 10).frame(height: 24)
+                .background(
+                    Capsule().fill(LinearGradient(
+                        colors: [Color(red: 0x16 / 255, green: 0xC4 / 255, blue: 0x5A / 255),
+                                 Color(red: 0x0E / 255, green: 0x9F / 255, blue: 0x8E / 255)],
+                        startPoint: .leading, endPoint: .trailing))
+                )
+                .overlay(Capsule().strokeBorder(.white.opacity(hovering ? 0.35 : 0.18)))
+                .shadow(color: Color(red: 0x16 / 255, green: 0xC4 / 255, blue: 0x5A / 255).opacity(0.35), radius: hovering ? 6 : 3)
+                .contentShape(Capsule())
+            }
+            .buttonStyle(.plain)
+            .onHover { hovering = $0 }
+            .pointerCursor()
+            .tooltip(ready ? "Reinicia e instala agora. As sessões continuam no tmux." : "Ver as novidades e instalar")
+        }
     }
 }

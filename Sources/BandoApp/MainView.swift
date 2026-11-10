@@ -132,6 +132,7 @@ struct TrailingItems: View {
     var body: some View {
         let p = model.palette
         HStack(spacing: 4) {
+            UpdateBadge().padding(.trailing, 4)
             SearchField().padding(.trailing, 6)
             let c = model.counts
             if c.waiting > 0 {
