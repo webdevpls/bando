@@ -642,8 +642,7 @@ struct SessionGrid: View {
         } else {
             GeometryReader { geo in
                 let inserting = dragSlot != nil && !dragReplace
-                var slots: [Slot] = items.map { .session($0) }
-                let _ = { if inserting, let at = dragSlot { slots.insert(.ghost, at: min(at, slots.count)) } }()
+                let slots: [Slot] = items.map { .session($0) }
                 let l = layout(slots.count, in: geo.size)
                 ZStack(alignment: .topLeading) {
                     ForEach(Array(slots.enumerated()), id: \.element.id) { i, slot in
@@ -675,7 +674,10 @@ struct SessionGrid: View {
                     }
                 }
                 .animation(.timingCurve(0.25, 0.1, 0.25, 1, duration: 0.2), value: slots.map(\.id))
-                .animation(.easeOut(duration: 0.12), value: dragReplace)
+                // Prévia leve por cima: os terminais não mudam de tamanho no arraste.
+                .overlay(alignment: .topLeading) {
+                    if inserting, let at = dragSlot { preview(items: items, ghostAt: at, size: geo.size) }
+                }
                 .onChange(of: dragSlot != nil) { _, on in
                     if on { dragWatch.start { dragSlot = nil; dragReplace = false } } else { dragWatch.stop() }
                 }
@@ -691,6 +693,35 @@ struct SessionGrid: View {
                     perform: { payloads, slot, replace in model.dropIntoGrid(payloads, at: slot, replace: replace) }))
             }
         }
+    }
+
+    /// Mapa de como a grade vai ficar: um retângulo por painel, com o nome, e
+    /// a posição nova destacada.
+    func preview(items: [Session], ghostAt at: Int, size: CGSize) -> some View {
+        var names: [String?] = items.map { $0.name }
+        names.insert(nil, at: min(at, names.count))
+        let l = layout(names.count, in: size)
+        return ZStack(alignment: .topLeading) {
+            Rectangle().fill(p.chrome.opacity(0.82))
+            ForEach(Array(names.enumerated()), id: \.offset) { i, name in
+                let f = l.frame(i)
+                Group {
+                    if let name {
+                        RoundedRectangle(cornerRadius: 10).fill(p.card)
+                            .overlay(RoundedRectangle(cornerRadius: 10).strokeBorder(p.border.opacity(2)))
+                            .overlay(Text(name).font(.system(size: 12, weight: .medium)).foregroundStyle(p.secondary)
+                                .lineLimit(1).padding(.horizontal, 12))
+                    } else {
+                        ghost
+                    }
+                }
+                .frame(width: f.width, height: f.height)
+                .offset(x: f.minX, y: f.minY)
+            }
+        }
+        .frame(width: size.width, height: size.height, alignment: .topLeading)
+        .allowsHitTesting(false)
+        .animation(.easeOut(duration: 0.15), value: at)
     }
 
     /// Célula tracejada no lugar onde o arraste vai cair.
@@ -847,7 +878,7 @@ final class DragEndWatch {
     func start(_ end: @escaping () -> Void) {
         guard monitor == nil else { return }
         monitor = NSEvent.addLocalMonitorForEvents(
-            matching: [.mouseMoved, .mouseEntered, .mouseExited, .leftMouseDown, .leftMouseUp, .rightMouseDown, .scrollWheel, .keyDown]
+            matching: [.mouseMoved, .leftMouseDown, .rightMouseDown, .scrollWheel, .keyDown]
         ) { [weak self] event in
             end()
             self?.stop()

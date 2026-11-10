@@ -179,7 +179,7 @@ struct Sidebar: View {
             }
             .buttonStyle(.plain).pointerCursor()
             if expandedStopped.contains("_hidden") {
-                ForEach(hidden.prefix(50)) { SessionRow(session: $0).opacity(0.75) }
+                TreeChildren { ForEach(hidden.prefix(50)) { SessionRow(session: $0, dimmed: true) } }
             }
         }
     }
@@ -327,6 +327,7 @@ struct Sidebar: View {
                     .frame(width: 28, height: 26).contentShape(Rectangle())
             }
             .menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize()
+            .pointerCursor()
             .tooltip("Exibição")
         }
         .padding(.leading, 14).padding(.trailing, 8)
@@ -509,7 +510,11 @@ struct SessionRow: View {
             // No modo de seleção, clique simples marca.
             if model.isSelecting { model.toggleMulti(session.id) } else { model.select(session.id) }
         }
-        .draggable(session.id)
+        .draggable(session.id) {
+            Label(session.name, systemImage: "terminal").font(.system(size: 12, weight: .medium))
+                .padding(.horizontal, 10).frame(height: 26)
+                .background(RoundedRectangle(cornerRadius: 6).fill(p.card))
+        }
         .contextMenu { SessionContextMenu(session: session) }
         .help(tooltip)
     }
